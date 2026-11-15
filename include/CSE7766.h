@@ -78,6 +78,8 @@ public:
     unsigned long powerCalibration = HLW_PREF_PULSE;   // 364
     unsigned long voltageCalibration = HLW_UREF_PULSE; // 368
     unsigned long currentCalibration = HLW_IREF_PULSE; // 36C
+    unsigned long byteCount = 0;
+    uint8_t lastByte = 0;
     
     void loop();
     bool everySecond();

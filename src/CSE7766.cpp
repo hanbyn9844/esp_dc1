@@ -1,10 +1,12 @@
 #include "CSE7766.h"
+#include "Debug.h"
 
 CSE7766::CSE7766(uint8_t rxPin, uint16_t baudrate)
 {
     this->serial = new SoftwareSerial(rxPin, SW_SERIAL_UNUSED_PIN, false, 128);
     this->serial->enableIntTx(false);
     this->serial->begin(baudrate);
+    pinMode(rxPin, INPUT_PULLUP);
     Cse.power_invalid = CSE_MAX_INVALID_POWER;
 }
 
@@ -116,6 +118,8 @@ void CSE7766::loop()
     while (this->serial->available())
     {
         uint8_t serial_in_byte = this->serial->read();
+        byteCount++;
+        lastByte = serial_in_byte;
 
         if (Cse.received)
         {
