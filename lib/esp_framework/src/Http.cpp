@@ -247,11 +247,11 @@ void Http::handleRoot()
                module ? module->getModuleVersion().c_str() : PSTR("0"), Rtc::GetBuildDateAndTime().c_str());
     server->sendContent_P(tmpData);
     server->sendContent_P(
-        PSTR("<tr><td>作者</td><td><a href='https://github.com/qlwz' target='_blank' style='color:#337ab7;text-decoration:none'>情留メ蚊子</a> / <a href='https://github.com/hanbyn9844' target='_blank' style='color:#337ab7;text-decoration:none'>Hanbyn</a><div style='font-size:13px;color:#888;margin-top:4px'>说明：长按配网，三击重启模块</div></td></tr>"));
+        PSTR("<tr><td>作者</td><td><a href='https://github.com/qlwz' target='_blank' style='color:#337ab7;text-decoration:none'>情留メ蚊子</a> / <a href='https://github.com/hanbyn9844' target='_blank' style='color:#337ab7;text-decoration:none'>Hanbyn</a><div style='font-size:13px;color:#888;margin-top:4px'>说明：长按5秒配网，三击重启模块</div></td></tr>"));
 
     server->sendContent_P(
         PSTR("<form method='POST' action='/update' enctype='multipart/form-data' onsubmit='postupdate(this);return false'>"
-             "<tr><td colspan='2'><a class='file'><input type='file' name='update' onchange=\"var f=this.value||(this.files&&this.files[0]?this.files[0].name:'');document.getElementById('file_name').innerText=f;\">选择文件</a><span id='file_name' style='margin-left:10px;display:inline-block;font-size:14px;margin-top:4px;vertical-align:top;color:#555;word-break:break-all'></span></td></tr>"
+             "<tr><td colspan='2'><a class='file'><input type='file' name='update' onchange=\"var f=(this.files&&this.files[0])?this.files[0].name:this.value.replace(/^.*[\\\\\\/]/,'');document.getElementById('file_name').innerText=f;\">选择文件</a><span id='file_name' style='margin-left:10px;display:inline-block;font-size:14px;margin-top:4px;vertical-align:top;color:#555;word-break:break-all'></span></td></tr>"
              "<tr><td colspan='2'><button type='submit' class='btn-info' onclick='postupdate(this);return false;'>升级</button><br>"
              "</form>"
              "<tr><td colspan='2' style='text-align:center'>OTA更新</td></tr>"

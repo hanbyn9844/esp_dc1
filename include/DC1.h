@@ -54,7 +54,7 @@ private:
 
     // 按键
     uint8_t buttonDebounceTime = 50;
-    uint16_t buttonLongPressTime = 2000; // 2000 = 2s
+    uint16_t buttonLongPressTime = 5000; // 5000 = 5s
     uint8_t buttonTiming = 0;
     unsigned long buttonTimingStart[4] = {0, 0, 0, 0};
     uint8_t buttonAction[4] = {0, 0, 0, 0}; // 0 = 没有要执行的动作, 1 = 执行短按动作, 2 = 执行长按动作
@@ -81,7 +81,7 @@ public:
     void init();
     String getModuleName() { return F("dc1"); }
     String getModuleCNName() { return F("DC1插线板"); }
-    String getModuleVersion() { return F("2026.11.15.0005"); }
+    String getModuleVersion() { return F("2026.11.16.0001"); }
     String getModuleAuthor() { return F("情留メ蚊子"); }
     bool moduleLed();
 

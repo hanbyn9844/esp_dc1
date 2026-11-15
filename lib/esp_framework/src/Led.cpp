@@ -34,7 +34,7 @@ void Led::loop()
         if (Led::ledType != 4)
         {
             Led::ledType = 4;
-            ledTicker->attach(0.08, []() { toggle(); }); // Fast blink (80ms) for config portal
+            ledTicker->attach(0.2, []() { toggle(); }); // Blink (200ms) for config portal
         }
         return;
     }
