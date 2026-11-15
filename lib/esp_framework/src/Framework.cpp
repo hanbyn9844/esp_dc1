@@ -74,7 +74,7 @@ void Framework::one(unsigned long baud)
     Rtc::rtcRebootSave();
     rebootCount = Rtc::rtcReboot.fast_reboot_count > BOOT_LOOP_OFFSET ? Rtc::rtcReboot.fast_reboot_count - BOOT_LOOP_OFFSET : 0;
 
-    Serial.begin(baud);
+    Serial.begin(baud, SERIAL_8N1, SERIAL_TX_ONLY);
     globalConfig.debug.type = 1;
 }
 

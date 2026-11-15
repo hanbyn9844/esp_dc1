@@ -1,122 +1,211 @@
-#include <Wire.h>
 #include "CAT9554.h"
 #include "Debug.h"
 
 bool CAT9554::updateGpio = false;
 
-uint32_t i2c_buffer = 0;
-bool I2cValidRead(uint8_t addr, uint8_t reg, uint8_t size)
+void ICACHE_RAM_ATTR CAT9554::gpioIntr()
 {
-    uint8_t retry = I2C_RETRY_COUNTER;
-    bool status = false;
-    uint8_t last_err = 0;
-
-    i2c_buffer = 0;
-    while (!status && retry)
-    {
-        if (retry != I2C_RETRY_COUNTER)
-        {
-            delay(2);
-        }
-        Wire.beginTransmission(addr);
-        Wire.write(reg);
-        last_err = Wire.endTransmission(false);
-        if (last_err != 0)
-        {
-            Wire.beginTransmission(addr);
-            Wire.write(reg);
-            last_err = Wire.endTransmission(true);
-        }
-        if (0 == last_err)
-        {
-            if (Wire.requestFrom((int)addr, (int)size) == size)
-            {
-                for (uint32_t i = 0; i < size; i++)
-                {
-                    i2c_buffer = i2c_buffer << 8 | Wire.read();
-                }
-                status = true;
-            }
-        }
-        retry--;
-    }
-    if (!status)
-    {
-        Debug::AddError(PSTR("I2cR a=0x%02X r=0x%02X err=%d"), addr, reg, last_err);
-    }
-    return status;
-}
-
-bool I2cWrite(uint8_t addr, uint8_t reg, uint32_t val, uint8_t size)
-{
-    uint8_t retry = I2C_RETRY_COUNTER;
-    uint8_t err = 0;
-    while (retry)
-    {
-        if (retry != I2C_RETRY_COUNTER)
-        {
-            delay(2);
-        }
-        Wire.beginTransmission(addr);
-        Wire.write(reg);
-        uint8_t bytes = size;
-        while (bytes--)
-        {
-            Wire.write((val >> (8 * bytes)) & 0xFF);
-        }
-        err = Wire.endTransmission(true);
-        if (err == 0)
-        {
-            return true;
-        }
-        retry--;
-    }
-    Debug::AddError(PSTR("I2cW a=0x%02X r=0x%02X err=%d"), addr, reg, err);
-    return false;
+    CAT9554::updateGpio = true;
 }
 
 CAT9554::CAT9554(uint8_t sda, uint8_t scl, uint16_t frequency)
 {
-    // Global Arduino GPIO calls for bus recovery
-    ::pinMode(sda, INPUT_PULLUP);
-    ::pinMode(scl, OUTPUT);
-    for (int i = 0; i < 16; i++)
+    this->sdaPin = sda;
+    this->sclPin = scl;
+    if (frequency > 0 && frequency <= 50000)
     {
-        ::digitalWrite(scl, LOW);
-        delayMicroseconds(25);
-        ::digitalWrite(scl, HIGH);
-        delayMicroseconds(25);
+        this->halfPeriodUs = 500000UL / frequency;
     }
-    // STOP condition
-    ::pinMode(sda, OUTPUT);
-    ::digitalWrite(sda, LOW);
-    delayMicroseconds(25);
-    ::digitalWrite(scl, HIGH);
-    delayMicroseconds(25);
-    ::digitalWrite(sda, HIGH);
-    delayMicroseconds(25);
-    ::pinMode(sda, INPUT_PULLUP);
+    else
+    {
+        this->halfPeriodUs = 25; // default 20kHz
+    }
+    this->i2cAddress = CAT9554_ADDRESS;
+    this->inputMask = 0xFF; // All unpressed by default
+    this->outputMask = 0x00;
+    this->configMask = 0x0F;
+    this->lastPollTime = 0;
 
-    Wire.begin(sda, scl);
-    Wire.setClock(frequency);
-    Wire.setClockStretchLimit(150000L);
+    sdaHigh();
+    sclHigh();
+}
+
+void CAT9554::busRecovery()
+{
+    sdaHigh();
+    sclHigh();
+    delayMicroseconds(this->halfPeriodUs);
+    if (!sdaRead())
+    {
+        for (uint8_t i = 0; i < 18; i++)
+        {
+            sclLow();
+            delayMicroseconds(this->halfPeriodUs);
+            sclHigh();
+            delayMicroseconds(this->halfPeriodUs);
+            if (sdaRead())
+            {
+                break;
+            }
+        }
+    }
+    i2cStop();
+}
+
+void CAT9554::i2cStart()
+{
+    sdaHigh();
+    sclHigh();
+    delayMicroseconds(this->halfPeriodUs);
+    sdaLow();
+    delayMicroseconds(this->halfPeriodUs);
+    sclLow();
+    delayMicroseconds(this->halfPeriodUs);
+}
+
+void CAT9554::i2cStop()
+{
+    sdaLow();
+    delayMicroseconds(this->halfPeriodUs);
+    sclHigh();
+    delayMicroseconds(this->halfPeriodUs);
+    sdaHigh();
+    delayMicroseconds(this->halfPeriodUs);
+}
+
+bool CAT9554::i2cWriteByte(uint8_t data)
+{
+    for (uint8_t i = 0; i < 8; i++)
+    {
+        if (data & 0x80)
+        {
+            sdaHigh();
+        }
+        else
+        {
+            sdaLow();
+        }
+        delayMicroseconds(this->halfPeriodUs);
+        sclHigh();
+        delayMicroseconds(this->halfPeriodUs);
+        sclLow();
+        delayMicroseconds(2);
+        data <<= 1;
+    }
+
+    // Read ACK/NACK
+    sdaHigh();
+    delayMicroseconds(this->halfPeriodUs);
+    sclHigh();
+    delayMicroseconds(this->halfPeriodUs);
+    bool ack = !sdaRead(); // 0 is ACK
+    sclLow();
+    delayMicroseconds(this->halfPeriodUs);
+    return ack;
+}
+
+uint8_t CAT9554::i2cReadByte(bool ack)
+{
+    uint8_t data = 0;
+    sdaHigh();
+    for (uint8_t i = 0; i < 8; i++)
+    {
+        delayMicroseconds(this->halfPeriodUs);
+        sclHigh();
+        delayMicroseconds(this->halfPeriodUs);
+        data = (data << 1) | (sdaRead() ? 1 : 0);
+        sclLow();
+        delayMicroseconds(2);
+    }
+
+    // Send ACK or NACK
+    if (ack)
+    {
+        sdaLow();
+    }
+    else
+    {
+        sdaHigh();
+    }
+    delayMicroseconds(this->halfPeriodUs);
+    sclHigh();
+    delayMicroseconds(this->halfPeriodUs);
+    sclLow();
+    sdaHigh();
+    delayMicroseconds(this->halfPeriodUs);
+    return data;
 }
 
 bool CAT9554::readByte(uint8_t reg, uint8_t *data)
 {
-    bool status = I2cValidRead(this->i2cAddress, reg, 1);
-    *data = (uint8_t)i2c_buffer;
-    return status;
+    for (uint8_t retry = 0; retry < I2C_RETRY_COUNTER; retry++)
+    {
+        if (retry > 0)
+        {
+            busRecovery();
+            delay(2);
+        }
+        i2cStart();
+        if (!i2cWriteByte((this->i2cAddress << 1) | 0))
+        {
+            i2cStop();
+            continue;
+        }
+        if (!i2cWriteByte(reg))
+        {
+            i2cStop();
+            continue;
+        }
+        // Repeated start
+        i2cStart();
+        if (!i2cWriteByte((this->i2cAddress << 1) | 1))
+        {
+            i2cStop();
+            continue;
+        }
+        *data = i2cReadByte(false); // NACK on 1-byte read
+        i2cStop();
+        return true;
+    }
+    Debug::AddError(PSTR("I2cR a=0x%02X r=0x%02X err"), this->i2cAddress, reg);
+    return false;
 }
 
 bool CAT9554::writeByte(uint8_t reg, uint16_t value)
 {
-    return I2cWrite(this->i2cAddress, reg, value, 1);
+    for (uint8_t retry = 0; retry < I2C_RETRY_COUNTER; retry++)
+    {
+        if (retry > 0)
+        {
+            busRecovery();
+            delay(2);
+        }
+        i2cStart();
+        if (!i2cWriteByte((this->i2cAddress << 1) | 0))
+        {
+            i2cStop();
+            continue;
+        }
+        if (!i2cWriteByte(reg))
+        {
+            i2cStop();
+            continue;
+        }
+        if (!i2cWriteByte((uint8_t)(value & 0xFF)))
+        {
+            i2cStop();
+            continue;
+        }
+        i2cStop();
+        return true;
+    }
+    Debug::AddError(PSTR("I2cW a=0x%02X r=0x%02X err"), this->i2cAddress, reg);
+    return false;
 }
 
 bool CAT9554::readGpio()
 {
-    uint8_t data = 0;
+    uint8_t data = 0xFF;
     if (!this->readByte(INPUT_REG, &data))
     {
         return false;
@@ -127,11 +216,7 @@ bool CAT9554::readGpio()
 
 bool CAT9554::writeGpio()
 {
-    if (!this->writeByte(OUTPUT_REG, this->outputMask))
-    {
-        return false;
-    }
-    return true;
+    return this->writeByte(OUTPUT_REG, this->outputMask);
 }
 
 bool CAT9554::configGpio()
@@ -157,41 +242,41 @@ bool CAT9554::readConfig()
     return true;
 }
 
-void ICACHE_RAM_ATTR CAT9554::gpioIntr()
-{
-    CAT9554::updateGpio = true;
-}
-
 void CAT9554::setup()
 {
+    busRecovery();
+
     bool ready = false;
-    // Check 0x20
+    uint8_t testVal = 0;
+
+    // Probe 0x20
+    this->i2cAddress = 0x20;
     for (uint8_t i = 0; i < 5; i++)
     {
-        if (this->readGpio())
+        if (this->readByte(INPUT_REG, &testVal))
         {
             ready = true;
-            Debug::AddInfo(PSTR("CAT9554 ready at 0x%02X"), this->i2cAddress);
+            this->inputMask = testVal;
+            Debug::AddInfo(PSTR("CAT9554 ready at 0x20 (in=0x%02X)"), testVal);
             break;
         }
         delay(10);
-        yield();
     }
 
-    // Check 0x38 if 0x20 failed
     if (!ready)
     {
+        // Probe 0x38
         this->i2cAddress = 0x38;
         for (uint8_t i = 0; i < 5; i++)
         {
-            if (this->readGpio())
+            if (this->readByte(INPUT_REG, &testVal))
             {
                 ready = true;
-                Debug::AddInfo(PSTR("CAT9554 ready at 0x38"));
+                this->inputMask = testVal;
+                Debug::AddInfo(PSTR("CAT9554 ready at 0x38 (in=0x%02X)"), testVal);
                 break;
             }
             delay(10);
-            yield();
         }
     }
 
@@ -208,18 +293,23 @@ void CAT9554::setup()
         attachInterrupt(this->irqPin, gpioIntr, FALLING);
         CAT9554::updateGpio = false;
     }
+
     this->readGpio();
     this->readConfig();
 }
 
 bool CAT9554::digitalRead(uint8_t pin)
 {
-    if (!this->enableIrq || CAT9554::updateGpio)
+    unsigned long now = millis();
+    if (!this->enableIrq || CAT9554::updateGpio || (now - this->lastPollTime > 50))
     {
-        this->readGpio();
+        if (this->readGpio())
+        {
+            this->lastPollTime = now;
+        }
         CAT9554::updateGpio = false;
     }
-    return this->inputMask & (1 << pin);
+    return (this->inputMask & (1 << pin)) != 0;
 }
 
 bool CAT9554::digitalWrite(uint8_t pin, bool value)

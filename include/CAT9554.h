@@ -22,6 +22,55 @@ enum CAT9554Commands
 
 class CAT9554
 {
+private:
+    uint8_t sdaPin = 3;
+    uint8_t sclPin = 12;
+    uint32_t halfPeriodUs = 25; // 20kHz default
+    unsigned long lastPollTime = 0;
+
+    inline void sdaLow()
+    {
+        ::pinMode(this->sdaPin, OUTPUT);
+        ::digitalWrite(this->sdaPin, LOW);
+    }
+
+    inline void sdaHigh()
+    {
+        ::pinMode(this->sdaPin, INPUT_PULLUP);
+    }
+
+    inline bool sdaRead()
+    {
+        return ::digitalRead(this->sdaPin) == HIGH;
+    }
+
+    inline void sclLow()
+    {
+        ::pinMode(this->sclPin, OUTPUT);
+        ::digitalWrite(this->sclPin, LOW);
+    }
+
+    inline void sclHigh()
+    {
+        ::pinMode(this->sclPin, INPUT_PULLUP);
+        uint16_t timeout = 500;
+        while (!sclRead() && timeout--)
+        {
+            delayMicroseconds(1);
+        }
+    }
+
+    inline bool sclRead()
+    {
+        return ::digitalRead(this->sclPin) == HIGH;
+    }
+
+    void i2cStart();
+    void i2cStop();
+    bool i2cWriteByte(uint8_t data);
+    uint8_t i2cReadByte(bool ack);
+    void busRecovery();
+
 protected:
     uint8_t i2cAddress = CAT9554_ADDRESS;
     bool readByte(uint8_t reg, uint8_t *data);
@@ -32,11 +81,11 @@ protected:
     bool readConfig();
 
     /// Mask for the pin mode - 1 means output, 0 means input
-    uint16_t configMask = 0xFF;
+    uint16_t configMask = 0x0F;
     /// The mask to write as output state - 1 means HIGH, 0 means LOW
     uint16_t outputMask = 0x00;
     /// The state read in read_gpio_ - 1 means HIGH, 0 means LOW
-    uint16_t inputMask = 0x00;
+    uint16_t inputMask = 0xFF;
     /// IRQ is enabled.
     bool enableIrq = false;
     /// IRQ pin.
