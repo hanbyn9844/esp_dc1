@@ -81,7 +81,7 @@ public:
     void init();
     String getModuleName() { return F("dc1"); }
     String getModuleCNName() { return F("DC1插线板"); }
-    String getModuleVersion() { return F("2026.11.15.0004"); }
+    String getModuleVersion() { return F("2026.11.15.0005"); }
     String getModuleAuthor() { return F("情留メ蚊子"); }
     bool moduleLed();
 
