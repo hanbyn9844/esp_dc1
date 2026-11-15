@@ -2,9 +2,6 @@
 #include "DC1.h"
 #include "Rtc.h"
 #include "Util.h"
-#ifdef USE_HOMEKIT
-#include "HomeKit.h"
-#endif
 
 #pragma region 继承
 
@@ -84,6 +81,15 @@ void DC1::loop()
     for (size_t ch = 0; ch < channels; ch++)
     {
         checkButton(ch);
+    }
+
+    if (masterClickCount > 0 && digitalRead(KEY_0_PIN) != 0)
+    {
+        if (millis() - masterLastReleaseTime >= 350)
+        {
+            switchRelay(0, !bitRead(lastState, 0), true);
+            masterClickCount = 0;
+        }
     }
 
     if (bitRead(operationFlag, 0))
@@ -264,9 +270,6 @@ void DC1::httpAdd(ESP8266WebServer *server)
     server->on(F("/dc1_setting"), std::bind(&DC1::httpSetting, this, server));
     server->on(F("/ha"), std::bind(&DC1::httpHa, this, server));
     server->on(F("/metrics"), std::bind(&DC1::httpMetrics, this, server));
-#ifdef USE_HOMEKIT
-    server->on(F("/homekit"), std::bind(&homekit_http, server));
-#endif
 }
 
 String DC1::httpGetStatus(ESP8266WebServer *server)
@@ -366,9 +369,6 @@ void DC1::httpHtml(ESP8266WebServer *server)
              "<button type='button' class='btn-danger' style='margin-top:10px' onclick=\"javascript:if(confirm('确定要重置用电量？')){ajaxPost('/dc1_setting', 'c=1');}\">重置用电量</button></td></tr>"
              "</tbody></table></form>"));
 
-#ifdef USE_HOMEKIT
-    homekit_html(server);
-#endif
 
     server->sendContent_P(
         PSTR("<script type='text/javascript'>"
@@ -707,6 +707,54 @@ void DC1::checkButton(uint8_t ch)
 {
     bool buttonState = ch == 0 ? digitalRead(btnGPIO[ch]) : cat9554->digitalRead(btnGPIO[ch]);
 
+    if (ch == 0)
+    {
+        if (buttonState == 0)
+        {
+            if (!bitRead(buttonTiming, 0))
+            {
+                bitSet(buttonTiming, 0);
+                buttonTimingStart[0] = millis();
+            }
+            else
+            {
+                if (buttonAction[0] != 2 && (millis() - buttonTimingStart[0] >= buttonLongPressTime))
+                {
+                    buttonAction[0] = 2;
+                    masterClickCount = 0;
+                    Debug::AddInfo(PSTR("Master button long press -> setupWifiManager"));
+                    Wifi::setupWifiManager(false);
+                }
+            }
+        }
+        else
+        {
+            if (bitRead(buttonTiming, 0))
+            {
+                bitClear(buttonTiming, 0);
+                if (buttonAction[0] == 2)
+                {
+                    buttonAction[0] = 0;
+                }
+                else if (millis() - buttonTimingStart[0] >= buttonDebounceTime)
+                {
+                    masterClickCount++;
+                    masterLastReleaseTime = millis();
+                    Debug::AddInfo(PSTR("Master button click: %d"), masterClickCount);
+                    if (masterClickCount >= 3)
+                    {
+                        masterClickCount = 0;
+                        Debug::AddInfo(PSTR("Master button triple click -> restarting ESP..."));
+                        Led::blinkLED(30, 10);
+                        delay(200);
+                        ESP.restart();
+                    }
+                }
+            }
+        }
+        return;
+    }
+
     if (buttonState == 0)
     {
         if (!bitRead(buttonTiming, ch))
@@ -715,33 +763,19 @@ void DC1::checkButton(uint8_t ch)
             buttonTimingStart[ch] = millis();
         }
         else
-        { // buttonTiming = true
+        {
             if (millis() >= (buttonTimingStart[ch] + buttonDebounceTime))
             {
                 buttonAction[ch] = 1;
-            }
-            if (millis() >= (buttonTimingStart[ch] + buttonLongPressTime))
-            {
-                buttonAction[ch] = 2;
             }
         }
     }
     else
     {
         bitClear(buttonTiming, ch);
-        if (buttonAction[ch] != 0)
+        if (buttonAction[ch] == 1)
         {
-            if (buttonAction[ch] == 1) // 执行短按动作
-            {
-                switchRelay(ch, !bitRead(lastState, ch), true);
-            }
-            else if (buttonAction[ch] == 2) // 执行长按动作
-            {
-                if (ch == 0)
-                {
-                    Wifi::setupWifiManager(false);
-                }
-            }
+            switchRelay(ch, !bitRead(lastState, ch), true);
             buttonAction[ch] = 0;
         }
     }

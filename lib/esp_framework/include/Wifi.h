@@ -30,7 +30,10 @@ public:
     static unsigned long configPortalStart;
     static bool isDHCP;
     static WiFiEventHandler STAGotIP;
-    //static WiFiEventHandler STADisconnected;
+    static WiFiEventHandler STADisconnected;
+    static unsigned long lastWifiCheck;
+    static unsigned long lastDisconnectTime;
+    static bool wasConnected;
     static WiFiClient wifiClient;
     static void connectWifi();
     static void setupWifi();

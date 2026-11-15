@@ -7,8 +7,11 @@
 
 WiFiClient Wifi::wifiClient;
 WiFiEventHandler Wifi::STAGotIP;
-//WiFiEventHandler Wifi::STADisconnected;
+WiFiEventHandler Wifi::STADisconnected;
 bool Wifi::isDHCP = true;
+unsigned long Wifi::lastWifiCheck = 0;
+unsigned long Wifi::lastDisconnectTime = 0;
+bool Wifi::wasConnected = false;
 
 unsigned long Wifi::configPortalStart = 0;
 #ifdef WIFI_CONNECT_TIMEOUT
@@ -36,31 +39,30 @@ void Wifi::setupWifi()
 {
     WiFi.persistent(false); // Solve possible wifi init errors (re-add at 6.2.1.16 #4044, #4083)
     WiFi.disconnect(true);  // Delete SDK wifi config
-    delay(200);
+    delay(100);
     WiFi.mode(WIFI_STA);
+    WiFi.setSleepMode(WIFI_NONE_SLEEP); // Disable sleep for maximum stability and responsiveness
     WiFi.setAutoConnect(true);
     WiFi.setAutoReconnect(true);
     WiFi.hostname(UID);
     Debug::AddInfo(PSTR("Connecting to %s %s Wifi"), globalConfig.wifi.ssid, globalConfig.wifi.pass);
     STAGotIP = WiFi.onStationModeGotIP([](const WiFiEventStationModeGotIP &event) {
-#ifdef WIFI_CONNECT_TIMEOUT
-        connectStart = 0;
-#endif
-        Debug::AddInfo(PSTR("WiFi1 connected. SSID: %s IP address: %s"), WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
+        wasConnected = true;
+        lastDisconnectTime = 0;
+        Debug::AddInfo(PSTR("WiFi connected. SSID: %s IP: %s"), WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
         if (globalConfig.wifi.is_static && String(globalConfig.wifi.ip).equals(WiFi.localIP().toString()))
         {
             isDHCP = false;
         }
-        /*
-        STADisconnected = WiFi.onStationModeDisconnected([](const WiFiEventStationModeDisconnected &event) {
-            if (connectStart == 0)
-            {
-                connectStart = millis() + WIFI_CONNECT_TIMEOUT * 1000;
-            }
-            Debug::AddInfo(PSTR("onStationModeDisconnected"));
-            STADisconnected = NULL;
-        });
-        */
+    });
+
+    STADisconnected = WiFi.onStationModeDisconnected([](const WiFiEventStationModeDisconnected &event) {
+        if (wasConnected)
+        {
+            Debug::AddInfo(PSTR("WiFi disconnected: reason=%d"), event.reason);
+            wasConnected = false;
+            lastDisconnectTime = millis();
+        }
     });
     if (globalConfig.wifi.is_static)
     {
@@ -133,19 +135,52 @@ void Wifi::tryConnect(String ssid, String pass)
 
 void Wifi::loop()
 {
-#ifdef WIFI_CONNECT_TIMEOUT
-    if (connectStart > 0 && millis() > connectStart + (WIFI_CONNECT_TIMEOUT * 1000))
-    {
-        connectStart = 0;
-        if (!WiFi.isConnected())
-        {
-            setupWifiManager(false);
-            return;
-        }
-    }
-#endif
+    // Active WiFi connection watchdog when not in Config Portal
     if (configPortalStart == 0)
     {
+        if (globalConfig.wifi.ssid[0] != '\0')
+        {
+            unsigned long now = millis();
+            if (WiFi.status() == WL_CONNECTED)
+            {
+                if (!wasConnected)
+                {
+                    wasConnected = true;
+                    lastDisconnectTime = 0;
+                    Debug::AddInfo(PSTR("WiFi connection restored. IP: %s"), WiFi.localIP().toString().c_str());
+                }
+            }
+            else
+            {
+                if (wasConnected)
+                {
+                    wasConnected = false;
+                    lastDisconnectTime = now;
+                    lastWifiCheck = now;
+                    Debug::AddInfo(PSTR("WiFi dropped, initiating auto-reconnect watchdog..."));
+                }
+
+                // Check every 8 seconds
+                if (now - lastWifiCheck >= 8000)
+                {
+                    lastWifiCheck = now;
+                    unsigned long disDuration = lastDisconnectTime > 0 ? (now - lastDisconnectTime) : 0;
+                    Debug::AddInfo(PSTR("WiFi reconnecting (status=%d, dis=%lus)..."), WiFi.status(), disDuration / 1000);
+
+                    if (disDuration > 45000)
+                    {
+                        // Disconnected for more than 45 seconds: hard reset association
+                        WiFi.disconnect(false);
+                        delay(20);
+                        WiFi.begin(globalConfig.wifi.ssid, globalConfig.wifi.pass);
+                    }
+                    else
+                    {
+                        WiFi.reconnect();
+                    }
+                }
+            }
+        }
         return;
     }
     dnsServer->processNextRequest();

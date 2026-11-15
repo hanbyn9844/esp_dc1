@@ -1,6 +1,7 @@
 #include <ESP8266WiFi.h>
 #include "Led.h"
 #include "Module.h"
+#include "Wifi.h"
 
 Ticker *Led::ledTicker;
 Ticker *Led::ledTicker2;
@@ -26,6 +27,15 @@ void Led::loop()
 {
     if (io == 99)
     {
+        return;
+    }
+    if (Wifi::configPortalStart > 0)
+    {
+        if (Led::ledType != 4)
+        {
+            Led::ledType = 4;
+            ledTicker->attach(0.08, []() { toggle(); }); // Fast blink (80ms) for config portal
+        }
         return;
     }
     if (module && module->moduleLed())

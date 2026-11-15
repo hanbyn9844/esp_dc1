@@ -58,6 +58,8 @@ private:
     uint8_t buttonTiming = 0;
     unsigned long buttonTimingStart[4] = {0, 0, 0, 0};
     uint8_t buttonAction[4] = {0, 0, 0, 0}; // 0 = 没有要执行的动作, 1 = 执行短按动作, 2 = 执行长按动作
+    uint8_t masterClickCount = 0;
+    unsigned long masterLastReleaseTime = 0;
     void checkButton(uint8_t ch);
 
     void httpDo(ESP8266WebServer *server);
@@ -79,7 +81,7 @@ public:
     void init();
     String getModuleName() { return F("dc1"); }
     String getModuleCNName() { return F("DC1插线板"); }
-    String getModuleVersion() { return F("2026.11.15.0002"); }
+    String getModuleVersion() { return F("2026.11.15.0003"); }
     String getModuleAuthor() { return F("情留メ蚊子"); }
     bool moduleLed();
 
