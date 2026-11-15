@@ -240,13 +240,14 @@ void Http::handleRoot()
                ESP.getFreeSketchSpace() / 1024, ESP.getSdkVersion(), ESP.getResetReason().c_str(), mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     server->sendContent_P(tmpData);
 
+    server->sendContent_P(PSTR("<table class='gridtable'><thead><tr><th colspan='2'>固件升级</th></tr></thead><tbody>"));
     snprintf_P(tmpData, sizeof(tmpData),
-               PSTR("<table class='gridtable'><thead><tr><th colspan='2'>固件升级</th></tr></thead><tbody>"
-                    "<tr><td>当前版本</td><td>v%s</td></tr>"
-                    "<tr><td>编译时间</td><td>%s</td></tr>"
-                    "<tr><td>作者</td><td><a href='https://github.com/qlwz' target='_blank' style='color:#337ab7;text-decoration:none'>情留メ蚊子</a> / <a href='https://github.com/hanbyn9844' target='_blank' style='color:#337ab7;text-decoration:none'>Hanbyn</a><div style='font-size:13px;color:#888;margin-top:4px'>说明：长按配网，三击重启模块</div></td></tr>"),
+               PSTR("<tr><td>当前版本</td><td>v%s</td></tr>"
+                    "<tr><td>编译时间</td><td>%s</td></tr>"),
                module ? module->getModuleVersion().c_str() : PSTR("0"), Rtc::GetBuildDateAndTime().c_str());
     server->sendContent_P(tmpData);
+    server->sendContent_P(
+        PSTR("<tr><td>作者</td><td><a href='https://github.com/qlwz' target='_blank' style='color:#337ab7;text-decoration:none'>情留メ蚊子</a> / <a href='https://github.com/hanbyn9844' target='_blank' style='color:#337ab7;text-decoration:none'>Hanbyn</a><div style='font-size:13px;color:#888;margin-top:4px'>说明：长按配网，三击重启模块</div></td></tr>"));
 
     server->sendContent_P(
         PSTR("<form method='POST' action='/update' enctype='multipart/form-data' onsubmit='postupdate(this);return false'>"
@@ -859,7 +860,7 @@ void Http::begin()
     server->on(F("/module_setting"), handleModuleSetting);
     server->on(F("/ota"), handleOTA);
     server->on(F("/get_status"), handleGetStatus);
-    server->on(F("/favicon.ico"), HTTP_GET, handleFavicon);
+    server->on(F("/favicon.ico"), handleFavicon);
     server->onNotFound(handleNotFound);
     handleUpdate();
 
